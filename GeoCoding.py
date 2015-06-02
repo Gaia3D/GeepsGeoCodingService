@@ -21,8 +21,8 @@ app = Flask(__name__)
 
 
 # 전역변수
-gSourceList = ['auto', 'vworld', 'daum', 'naver', 'google']
-gOutputList = ['json', 'xml']
+gSourceList = ['auto', 'vworld', 'vworld_new', 'daum', 'naver', 'google']
+gOutputList = ['json']
 gCrsList = ['epsg:4326']
 
 gKeyListDict = dict()
@@ -33,7 +33,14 @@ gFieldXDict = dict()
 gFieldYDict = dict()
 gFieldAddressDict = dict()
 
+# TODO: 키 정보들은 별도 파일에서 불러오게 변경 필요
 gKeyListDict['vworld'] = ['103189FA-7633-3FA9-8845-E5718CAA0EC7']
+gKeyListDict['vworld_new'] = gKeyListDict['vworld']
+gKeyListDict['daum'] = ['28eda2bd7b2e94ddf107542fbba6ca34']
+gKeyListDict['naver'] = ['c4c52b81f54f0ee2f51824298ce04c75']
+gKeyListDict['google'] = ['']
+
+
 gKeyIndexDict['vworld'] = 0
 gQueryDict['vworld'] = "http://apis.vworld.kr/jibun2coord.do?q={q}&apiKey={key}&domain=http://175.116.155.143&output=json&epsg=4326"
 gResFilterDict['vworld'] = "[dic]"
@@ -41,15 +48,13 @@ gFieldXDict['vworld'] = "item['EPSG_4326_X']"
 gFieldYDict['vworld'] = "item['EPSG_4326_Y']"
 gFieldAddressDict['vworld'] = "item['JUSO']"
 
-gKeyListDict['vworld2'] = gKeyListDict['vworld']
-gKeyIndexDict['vworld2'] = 0
-gQueryDict['vworld2'] = "http://apis.vworld.kr/new2coord.do?q={q}&apiKey={key}&domain=http://175.116.155.143&output=json&epsg=4326"
-gResFilterDict['vworld2'] = "[dic]"
-gFieldXDict['vworld2'] = "item['EPSG_4326_X']"
-gFieldYDict['vworld2'] = "item['EPSG_4326_Y']"
-gFieldAddressDict['vworld2'] = "item['JUSO']"
+gKeyIndexDict['vworld_new'] = 0
+gQueryDict['vworld_new'] = "http://apis.vworld.kr/new2coord.do?q={q}&apiKey={key}&domain=http://175.116.155.143&output=json&epsg=4326"
+gResFilterDict['vworld_new'] = "[dic]"
+gFieldXDict['vworld_new'] = "item['EPSG_4326_X']"
+gFieldYDict['vworld_new'] = "item['EPSG_4326_Y']"
+gFieldAddressDict['vworld_new'] = "item['JUSO']"
 
-gKeyListDict['daum'] = ['28eda2bd7b2e94ddf107542fbba6ca34']
 gKeyIndexDict['daum'] = 0
 gQueryDict['daum'] = "https://apis.daum.net/local/geo/addr2coord?output=json&apikey={key}&q={q}"
 gResFilterDict['daum'] = "dic['channel']['item']"
@@ -57,7 +62,6 @@ gFieldXDict['daum'] = "item['lng']"
 gFieldYDict['daum'] = "item['lat']"
 gFieldAddressDict['daum'] = "item['title']"
 
-gKeyListDict['naver'] = ['c4c52b81f54f0ee2f51824298ce04c75']
 gKeyIndexDict['naver'] = 0
 gQueryDict['naver'] = "http://openapi.map.naver.com/api/geocode.php?output=json&encording=utf-8&key={key}&encoding=utf-8&coord=latlng&query={q}"
 gResFilterDict['naver'] = "dic['item']"
@@ -65,7 +69,6 @@ gFieldXDict['naver'] = "item['point']['x']"
 gFieldYDict['naver'] = "item['point']['y']"
 gFieldAddressDict['naver'] = "item['address']"
 
-gKeyListDict['google'] = ['']
 gKeyIndexDict['google'] = 0
 gQueryDict['google'] = "http://maps.googleapis.com/maps/api/geocode/json?address={q}"
 gResFilterDict['google'] = "dic['results']"
@@ -73,6 +76,7 @@ gFieldXDict['google'] = "item['geometry']['location']['lng']"
 gFieldYDict['google'] = "item['geometry']['location']['lat']"
 gFieldAddressDict['google'] = "item['formatted_address']"
 
+# TODO: 입력된 좌표계가 있으면 그걸로 리턴하게 변경 필요
 gProj5179 = Proj(init='epsg:5179')
 
 
@@ -113,9 +117,12 @@ def geo_coding():
         # 각 서비스의 조회 결과 담을 리스트
         result = list()
 
+
+        # TODO: 서비스가 지정된 경우 처리 필요
+
         # 쓰레드 이용하여 동시 호출: 네트워크 타임에서의 동시처리를 기대하지만 GIL 때문에 될지...
         th1 = Thread(query(q, 'vworld', result))
-        th2 = Thread(query(q, 'vworld2', result))
+        th2 = Thread(query(q, 'vworld_new', result))
         th3 = Thread(query(q, 'daum', result))
         th4 = Thread(query(q, 'naver', result))
 
@@ -131,6 +138,9 @@ def geo_coding():
         # 모두 실패한 경우 조회허용수가 얼마 안되는 구글신에 문의
         if len(result) < 1:
             query(q, 'google', result)
+
+        # TODO: 좌표계 지정된 경우 처리 필요
+        # TODO: output 지정된 경우 처리 필요
 
         ### RETURN ###
         # 입력 주소값과 완전 동일한 주소를 반환하면 틀림 없는 것으로 판정
@@ -217,24 +227,19 @@ def geo_coding():
                     }
                 )
 
+            # 통계적으로 튀는 값을 판별하는 방식이 있음
             # http://egloos.zum.com/bioscience/v/5716716
             # 하지만 그냥 편차가 가장 큰 놈을 제거하고 반복
             max_dev = None
             max_dev_index = None
             for i in range(len(result)):
-                res = result[i]
                 deviation = sqrt((avg_x-points[i][0])**2 + (avg_y-points[i][1])**2)
                 if not max_dev or deviation > max_dev:
                     max_dev_index = i
                     max_dev = deviation
-                """
-                else:
-                    if deviation > max_dev:
-                        max_dev_index = i
-                        max_dev = deviation
-                """
 
             result.remove(result[max_dev_index])
+
         ## END WHILE
 
         res_string = ""
