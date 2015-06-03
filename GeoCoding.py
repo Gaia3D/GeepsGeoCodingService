@@ -7,8 +7,24 @@ import json
 from threading import Thread
 from pyproj import Proj
 from math import sqrt
+import logging
 
-# import chardet
+# 로깅 모드 설정
+logging.basicConfig(level=logging.INFO)
+
+# 로깅 형식 지정
+# http://gyus.me/?p=418
+logger = logging.getLogger("failLogger")
+formatter = logging.Formatter('[%(levelname)s] %(asctime)s > %(message)s')
+fileHandler = logging.FileHandler("/temp/GeoCoding.log")
+streamHandler = logging.StreamHandler()
+fileHandler.setFormatter(formatter)
+streamHandler.setFormatter(formatter)
+logger.addHandler(fileHandler)
+logger.addHandler(streamHandler)
+
+
+#import chardet
 
 # 한글로 된 인자들을 받을때 오류가 생기지 않게 기본 문자열을 utf-8로 지정
 # http://libsora.so/posts/python-hangul/
@@ -25,7 +41,6 @@ gSourceList = ['auto', 'vworld', 'vworld_new', 'daum', 'naver', 'google']
 gOutputList = ['json']
 gCrsList = ['epsg:4326']
 
-gKeyListDict = dict()
 gKeyIndexDict = dict()
 gQueryDict = dict()
 gResFilterDict = dict()
@@ -33,13 +48,8 @@ gFieldXDict = dict()
 gFieldYDict = dict()
 gFieldAddressDict = dict()
 
-# TODO: 키 정보들은 별도 파일에서 불러오게 변경 필요
-gKeyListDict['vworld'] = ['103189FA-7633-3FA9-8845-E5718CAA0EC7']
-gKeyListDict['vworld_new'] = gKeyListDict['vworld']
-gKeyListDict['daum'] = ['28eda2bd7b2e94ddf107542fbba6ca34']
-gKeyListDict['naver'] = ['c4c52b81f54f0ee2f51824298ce04c75']
-gKeyListDict['google'] = ['']
-
+# 키 정보들은 별도 파일에서 불러옴
+from KeyFile import *
 
 gKeyIndexDict['vworld'] = 0
 gQueryDict['vworld'] = "http://apis.vworld.kr/jibun2coord.do?q={q}&apiKey={key}&domain=http://175.116.155.143&output=json&epsg=4326"
@@ -76,10 +86,27 @@ gFieldXDict['google'] = "item['geometry']['location']['lng']"
 gFieldYDict['google'] = "item['geometry']['location']['lat']"
 gFieldAddressDict['google'] = "item['formatted_address']"
 
-# TODO: 입력된 좌표계가 있으면 그걸로 리턴하게 변경 필요
+# 거리 계산을 위한 좌표계
 gProj5179 = Proj(init='epsg:5179')
 
 
+# TODO: 웹서비스 페이지 개발 필요
+@app.route("/service_page", methods=['GET'])
+def service_page():
+    pass
+
+
+@app.route("/getcapabilities", methods=['GET'])
+def getcapabilities():
+    capabilities = {
+        "sources": gSourceList,
+        "outputs": gOutputList,
+        "projections": gCrsList
+    }
+    return make_response(capabilities)
+
+
+# 실제 GeoCoding 서비스
 @app.route("/geocoding", methods=['GET'])
 def geo_coding():
     try:
@@ -117,56 +144,74 @@ def geo_coding():
         # 각 서비스의 조회 결과 담을 리스트
         result = list()
 
+        # auto의 경우 여러 서비스에 동시 문의
+        if source == "auto":
+            # 쓰레드 이용하여 동시 호출: 네트워크 타임에서의 동시처리를 기대하지만 GIL 때문에 될지...
+            th1 = Thread(query(q, 'vworld', result))
+            th2 = Thread(query(q, 'vworld_new', result))
+            th3 = Thread(query(q, 'daum', result))
+            th4 = Thread(query(q, 'naver', result))
 
-        # TODO: 서비스가 지정된 경우 처리 필요
+            th1.start()
+            th2.start()
+            th3.start()
+            th4.start()
+            th1.join()
+            th2.join()
+            th3.join()
+            th4.join()
 
-        # 쓰레드 이용하여 동시 호출: 네트워크 타임에서의 동시처리를 기대하지만 GIL 때문에 될지...
-        th1 = Thread(query(q, 'vworld', result))
-        th2 = Thread(query(q, 'vworld_new', result))
-        th3 = Thread(query(q, 'daum', result))
-        th4 = Thread(query(q, 'naver', result))
+            # 모두 실패한 경우 조회허용수가 얼마 안되는 구글신에 문의
+            if len(result) < 1:
+                query(q, 'google', result)
 
-        th1.start()
-        th2.start()
-        th3.start()
-        th4.start()
-        th1.join()
-        th2.join()
-        th3.join()
-        th4.join()
+        else: # source가 지정된 경우
+            query(q, source, result)
 
-        # 모두 실패한 경우 조회허용수가 얼마 안되는 구글신에 문의
-        if len(result) < 1:
-            query(q, 'google', result)
-
-        # TODO: 좌표계 지정된 경우 처리 필요
-        # TODO: output 지정된 경우 처리 필요
+        # 좌표계 지정된 경우 처리 필요
+        prj = Proj(init=crs)
 
         ### RETURN ###
         # 입력 주소값과 완전 동일한 주소를 반환하면 틀림 없는 것으로 판정
         for res in result:
             address = res["address"]
             if address == q:
+                if crs == "epsg:4326":
+                    x, y = res["x"], res["y"]
+                else:
+                    x, y = prj(res["x"], res["y"])
+
+                geojson = make_geojson(x, y, res["address"], res["service"], 0)
                 return make_response(
                     {
                         "sd": 0,
-                        "geojson": make_geojson(res["x"], res["y"], res["address"], res["service"], 0)
+                        "geojson": geojson
                     }
                 )
 
         ### RETURN ###
         # 하나도 응답이 없는 경우 실패로 리턴
         if len(res) <= 0:
+            # 실패시 로그로 남기자
+            # http://gyus.me/?p=418
+            logger.info("ALL fail | {}".format(q))
+
             return make_response({"sd": -1, "geojson": None})
 
         ### RETURN ###
         # 결과가 한 개인 경우
         if len(result) == 1:
             res = result[0]
+            if crs == "epsg:4326":
+                x, y = res["x"], res["y"]
+            else:
+                x, y = prj(res["x"], res["y"])
+
+            geojson = make_geojson(x, y, res["address"], res["service"], 0)
             return make_response(
                 {
                     "sd": 0,
-                    "geojson": make_geojson(res["x"], res["y"], res["address"], res["service"], 0)
+                    "geojson": geojson
                 }
             )
 
@@ -189,6 +234,7 @@ def geo_coding():
             avg_x = sum_x / len(points)
             avg_y = sum_y / len(points)
 
+            # 공간거리 편차 계산
             sum_dev_sq = 0
             for pnt in points:
                 sum_dev_sq += (avg_x-pnt[0])**2 + (avg_y-pnt[1])**2
@@ -214,7 +260,14 @@ def geo_coding():
                         if len(res["address"]) < len(address):
                             address = str(res["address"])
                     deviation = sqrt((avg_x-points[i][0])**2 + (avg_y-points[i][1])**2)
-                    base_data.append(make_geojson(res["x"], res["y"], res["address"], res["service"], int(deviation)))
+
+                    if crs == "epsg:4326":
+                        x, y = res["x"], res["y"]
+                    else:
+                        x, y = prj(res["x"], res["y"])
+
+                    geojson = make_geojson(x, y, res["address"], res["service"], int(deviation))
+                    base_data.append(geojson)
 
                 return make_response(
                     {
@@ -251,6 +304,7 @@ def geo_coding():
         return res_string
 
     except Exception as err:
+        logger.error(err)
         return "[ERROR] {}".format(err)
 
 
@@ -330,10 +384,9 @@ def query(q, service_name, result):
         raise Exception('HTTPError = ' + str(e.code))
     except urllib2.URLError, e:
         raise Exception('URLError = ' + str(e.reason))
-    except Exception, e:
+    except Exception:
         # 변환 실패의 경우 예상 포맷대로 들어오지 않음
-        # TODO: 각 서비스별로 실패 로그를 파일로 남김
-        print e
+        logger.debug("{} fail | {}".format(service_name, q))
         return None
 
 
