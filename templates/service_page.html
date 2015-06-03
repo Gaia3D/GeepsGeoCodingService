@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+<head lang="ko">
+    <meta charset="UTF-8">
+    <title>주소->좌표 변환서비스</title>
+    <link rel=stylesheet type=text/css href="{{ url_for('static', filename='leaflet.css') }}">
+    <style>
+        #map {height: 300px; width: 100%}
+    </style>
+    <script src="{{ url_for('static', filename='leaflet.js') }}"></script>
+</head>
+<body>
+    <div id="address_input">
+        <textarea rows="10" cols="80">
+여기에 주소를 입력 (여러 줄도 가능)
+        </textarea>
+    </div>
+    <button>변환 실행</button>
+    <div id="result_table">
+        <table>
+            <thead>
+                <tr><th>address</th><th>lng</th><th>lat</th><th>service</th><th>deviation</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>주소</td><td>경도</td><td>위도</td><td>서비스</td><td>분산</td></tr>
+            </tbody>
+        </table>
+    </div>
+    <div id="map"></div>
+<script>
+    var map = L.map('map').setView([37.5, 127], 7);
+	baseLayer = L.tileLayer('https://{s}.tiles.mapbox.com/v3/{id}/{z}/{x}/{y}.png', {
+		maxZoom: 18,
+		attribution: 'Map data &copy; <a href="http://openstreetmap.org">OpenStreetMap</a> contributors, ' +
+			'<a href="http://creativecommons.org/licenses/by-sa/2.0/">CC-BY-SA</a>, ' +
+			'Imagery © <a href="http://mapbox.com">Mapbox</a>',
+		id: 'examples.map-20v6611k'
+	}).addTo(map);
+</script>
+</body>
+</html>

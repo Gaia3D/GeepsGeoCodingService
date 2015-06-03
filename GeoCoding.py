@@ -2,6 +2,7 @@
 from flask import Flask
 from flask import request
 from flask import Response
+from flask import render_template
 import urllib2
 import json
 from threading import Thread
@@ -93,7 +94,7 @@ gProj5179 = Proj(init='epsg:5179')
 # TODO: 웹서비스 페이지 개발 필요
 @app.route("/service_page", methods=['GET'])
 def service_page():
-    pass
+    return render_template("service_page.html")
 
 
 @app.route("/getcapabilities", methods=['GET'])
