@@ -40,7 +40,9 @@ app = Flask(__name__)
 # 전역변수
 gSourceList = ['auto', 'vworld', 'vworld_new', 'daum', 'naver', 'google']
 gOutputList = ['json']
-gCrsList = ['epsg:4326']
+gCrsList = ['epsg:4326', 'epsg:5173', 'epsg:5174', 'epsg:5175', 'epsg:5176', 'epsg:5177', 'epsg:5178', 'epsg:5179',
+            'epsg:5180', 'epsg:5181', 'epsg:5182', 'epsg:5183', 'epsg:5184', 'epsg:5185', 'epsg:5186', 'epsg:5187',
+            'epsg:5188', 'epsg:3857', 'epsg:900913', 'epsg:32651', 'epsg:32652']
 
 gKeyIndexDict = dict()
 gQueryDict = dict()
@@ -51,6 +53,15 @@ gFieldAddressDict = dict()
 
 # 키 정보들은 별도 파일에서 불러옴
 from KeyFile import *
+"""
+# 보안을 위해 키 파일을 분리하여 git에 올라기지 않도록 함
+gKeyListDict = dict()
+gKeyListDict['vworld'] = ['********-****-*********-************']
+gKeyListDict['vworld_new'] = gKeyListDict['vworld']
+gKeyListDict['daum'] = ['********************************']
+gKeyListDict['naver'] = ['********************************']
+gKeyListDict['google'] = ['']
+"""
 
 gKeyIndexDict['vworld'] = 0
 gQueryDict['vworld'] = "http://apis.vworld.kr/jibun2coord.do?q={q}&apiKey={key}&domain=http://175.116.155.143&output=json&epsg=4326"
@@ -91,13 +102,12 @@ gFieldAddressDict['google'] = "item['formatted_address']"
 gProj5179 = Proj(init='epsg:5179')
 
 
-# TODO: 웹서비스 페이지 개발 필요
-@app.route("/service_page", methods=['GET'])
+@app.route("/geocoding/service_page", methods=['GET'])
 def service_page():
     return render_template("service_page.html")
 
 
-@app.route("/getcapabilities", methods=['GET'])
+@app.route("/geocoding/capabilities", methods=['GET'])
 def getcapabilities():
     capabilities = {
         "sources": gSourceList,
@@ -108,7 +118,7 @@ def getcapabilities():
 
 
 # 실제 GeoCoding 서비스
-@app.route("/geocoding", methods=['GET'])
+@app.route("/geocoding/api", methods=['GET'])
 def geo_coding():
     try:
         q = request.args.get('q', None)
@@ -173,6 +183,15 @@ def geo_coding():
         prj = Proj(init=crs)
 
         ### RETURN ###
+        # 하나도 응답이 없는 경우 실패로 리턴
+        if len(result) <= 0:
+            # 실패시 로그로 남기자
+            # http://gyus.me/?p=418
+            logger.info("ALL fail | {}".format(q))
+
+            return make_response({"sd": -1, "geojson": None})
+
+        ### RETURN ###
         # 입력 주소값과 완전 동일한 주소를 반환하면 틀림 없는 것으로 판정
         for res in result:
             address = res["address"]
@@ -191,15 +210,6 @@ def geo_coding():
                 )
 
         ### RETURN ###
-        # 하나도 응답이 없는 경우 실패로 리턴
-        if len(res) <= 0:
-            # 실패시 로그로 남기자
-            # http://gyus.me/?p=418
-            logger.info("ALL fail | {}".format(q))
-
-            return make_response({"sd": -1, "geojson": None})
-
-        ### RETURN ###
         # 결과가 한 개인 경우
         if len(result) == 1:
             res = result[0]
@@ -216,7 +226,7 @@ def geo_coding():
                 }
             )
 
-        # 오차범위로 즐어들거나 2개만 남을 때까지 반복해 실행
+        # 오차범위로 줄어들거나 2개만 남을 때까지 반복해 실행
         while True:
             # Naver 좌표계로 변환하여 거리측정 준비
             points = list()
@@ -247,6 +257,8 @@ def geo_coding():
                 service = None
                 address = None
                 base_data = list()
+                sum_x = sum_y = 0
+
                 for i in range(len(result)):
                     res = result[i]
                     if not service:
@@ -266,14 +278,16 @@ def geo_coding():
                         x, y = res["x"], res["y"]
                     else:
                         x, y = prj(res["x"], res["y"])
+                    sum_x += x
+                    sum_y += y
 
                     geojson = make_geojson(x, y, res["address"], res["service"], int(deviation))
                     base_data.append(geojson)
 
                 return make_response(
                     {
-                        "sd:": int(sd),
-                        "geojson": make_geojson(avg_x, avg_y, address, service, 0),
+                        "sd": int(sd),
+                        "geojson": make_geojson(sum_x/len(base_data), sum_y/len(base_data), address, service, 0),
                         "basedata": {
                             "type": "FeatureCollection",
                             "features": base_data
