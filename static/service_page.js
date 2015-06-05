@@ -1,0 +1,82 @@
+/**
+ * Created by jangbi on 2015-06-04.
+ */
+$(document).ready(onLoad);
+
+var map;
+
+function onLoad() {
+    // 지도 초기화
+    map = L.map('map').setView([37.5, 127], 7);
+	baseLayer = L.tileLayer('https://{s}.tiles.mapbox.com/v3/{id}/{z}/{x}/{y}.png', {
+		maxZoom: 18,
+		attribution: 'Map data &copy; <a href="http://openstreetmap.org">OpenStreetMap</a> contributors, ' +
+			'<a href="http://creativecommons.org/licenses/by-sa/2.0/">CC-BY-SA</a>, ' +
+			'Imagery © <a href="http://mapbox.com">Mapbox</a>',
+		id: 'examples.map-20v6611k'
+	}).addTo(map);
+
+    // 좌표계 리스트 채우기
+    $.getJSON("./capabilities", function(data) {
+        var items = [];
+        for (i in data.projections) {
+            crs = data.projections[i];
+            items.push('<option value="'+crs+'">'+crs.toUpperCase()+'</option>');
+        }
+        $("#crs").html(items.join(""))
+    });
+
+    // 버튼 동작 부착
+    $("button").on("click", onClickButton);
+    $("#address_input textarea").on("click", onClickTextarea);
+}
+
+function onClickButton() {
+    var id = $(this).attr("id");
+
+    switch (id) {
+        case "run":
+            convertAddr();
+            break;
+        default :
+            alert(id);
+            break;
+    }
+}
+
+// 입력 상자 클릭시 전체가 선택되게
+function onClickTextarea() {
+    $("#address_input textarea").select();
+}
+
+var markerGroup;
+function convertAddr() {
+    var data = $("#address_input textarea").val().trim().split("\n");
+    var crs = $("#crs").val();
+
+    // 초기화
+    $("#result_table table tbody").html("");
+    if (markerGroup) map.removeLayer(markerGroup);
+    markerGroup = L.layerGroup().addTo(map);
+    for (var i in data) {
+        var q = data[i];
+        var url = "/geocoding/api?crs="+encodeURIComponent(crs)+"&q="+encodeURIComponent(q);
+        $.getJSON(url, function(data) {
+            if (!data.geojson)
+                return;
+
+            var x = data.x;
+            var y = data.y;
+            var lng = data.lng;
+            var lat = data.lat;
+            var address = data.address;
+            var html = '<tr><td>'+data.q+'</td><td>'+address+'</td><td>'+ x.toFixed(2)+'</td><td>'+y.toFixed(2)+'</td>'
+            +'<td>'+lng.toFixed(5)+'</td><td>'+lat.toFixed(5)+'</td><td>'+data.geojson.properties.service+'</td><td>'+data.sd+'</td></tr>';
+            $("#result_table table tbody").append(html);
+
+            var marker = L.marker([lat, lng]);
+            marker.bindPopup(address);
+            marker.addTo(markerGroup);
+        });
+    }
+}

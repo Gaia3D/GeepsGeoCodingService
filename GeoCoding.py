@@ -126,6 +126,8 @@ def geo_coding():
         output = request.args.get('output', 'json').lower()
         crs = request.args.get('crs', 'epsg:4326').lower()
 
+        # TODO: 입력 주소의 정제가 필요
+
         # 인자 검사
         if not q:
             raise Exception("'q' argument is necessary.")
@@ -156,6 +158,7 @@ def geo_coding():
         result = list()
 
         # auto의 경우 여러 서비스에 동시 문의
+        # TODO: 병렬처리 안되어 성능 심각
         if source == "auto":
             # 쓰레드 이용하여 동시 호출: 네트워크 타임에서의 동시처리를 기대하지만 GIL 때문에 될지...
             th1 = Thread(query(q, 'vworld', result))
@@ -189,7 +192,8 @@ def geo_coding():
             # http://gyus.me/?p=418
             logger.info("ALL fail | {}".format(q))
 
-            return make_response({"sd": -1, "geojson": None})
+            return make_response({"q": q, "x": None, "y": None, "lng": None, "lat": None, "address": None,
+                                  "sd": -1, "geojson": None})
 
         ### RETURN ###
         # 입력 주소값과 완전 동일한 주소를 반환하면 틀림 없는 것으로 판정
@@ -204,6 +208,7 @@ def geo_coding():
                 geojson = make_geojson(x, y, res["address"], res["service"], 0)
                 return make_response(
                     {
+                        "q": q, "x": x, "y": y, "lng": res["x"], "lat": res["y"], "address": res["address"],
                         "sd": 0,
                         "geojson": geojson
                     }
@@ -221,6 +226,7 @@ def geo_coding():
             geojson = make_geojson(x, y, res["address"], res["service"], 0)
             return make_response(
                 {
+                    "q": q, "x": x, "y": y, "lng": res["x"], "lat": res["y"], "address": res["address"],
                     "sd": 0,
                     "geojson": geojson
                 }
@@ -266,11 +272,11 @@ def geo_coding():
                     else:
                         service = "{}|{}".format(service, res["service"])
 
-                    # 짧은 주소가 맞는 것으로 판단
+                    # 긴 주소가 맞는 것으로 판단
                     if not address:
                         address = str(res["address"])
                     else:
-                        if len(res["address"]) < len(address):
+                        if len(res["address"]) > len(address):
                             address = str(res["address"])
                     deviation = sqrt((avg_x-points[i][0])**2 + (avg_y-points[i][1])**2)
 
@@ -286,6 +292,7 @@ def geo_coding():
 
                 return make_response(
                     {
+                        "q": q, "x": x, "y": y, "lng": res["x"], "lat": res["y"], "address": address,
                         "sd": int(sd),
                         "geojson": make_geojson(sum_x/len(base_data), sum_y/len(base_data), address, service, 0),
                         "basedata": {
@@ -355,6 +362,10 @@ def format_res(res, name):
 
 def query(q, service_name, result):
     try:
+        # TODO: 원본주서 전처리가 필요하다.
+
+
+        # 각 서비스별 키를 돌려가며 사용
         i = gKeyIndexDict[service_name] + 1
         if i >= len(gKeyListDict[service_name]):
             gKeyIndexDict[service_name] = i = 0
@@ -383,17 +394,22 @@ def query(q, service_name, result):
         items = eval(gResFilterDict[service_name])
         for i in range(len(items)):
             item = items[i]
+            res_address = eval(gFieldAddressDict[service_name])
+            # TODO: 출력 주소의 정제가 필요
             result.append(
                 {
                     'service': service_name,
                     'seq': i,
                     'x': float(eval(gFieldXDict[service_name])),
                     'y': float(eval(gFieldYDict[service_name])),
-                    'address': eval(gFieldAddressDict[service_name]),
+                    'address': res_address,
                     'org': item
                 }
             )
             break  # 유사 주소를 여러개 반환하는 Naver 때문에 1개만 반환
+
+        # TODO: 결과의 유사도 판단이 필요하다
+        # http://iam312.pe.kr/m/post/277
 
     except urllib2.HTTPError, e:
         raise Exception('HTTPError = ' + str(e.code))

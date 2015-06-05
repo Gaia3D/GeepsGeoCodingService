@@ -8,34 +8,40 @@
         #map {height: 300px; width: 100%}
     </style>
     <script src="{{ url_for('static', filename='leaflet.js') }}"></script>
+    <script src="{{ url_for('static', filename='jquery-1.11.3.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='service_page.js') }}" charset="UTF-8"></script>
 </head>
 <body>
-    <div id="address_input">
-        <textarea rows="10" cols="80">
-여기에 주소를 입력 (여러 줄도 가능)
-        </textarea>
+    <h1>GEEPS 주소->좌표 변환 서비스</h1>
+    <div id="desc">
+        VWorld, Daum, Naver, Google의 GeoCoding 서비스를 종합적으로 이용하여 변환성공률을 높인 주소->좌표 변환 서비스입니다.<br/>
+        구주소와 도로명주소 모두 변환 가능하며, 섞여있는 경우에도 문제 없이 변환 가능합니다.<br/>
+        한국에서 사용되는 많은 표준 좌표계를 지원하며, X,Y는 선택한 좌표계상의 좌표이고, 경도,위도는 WGS84 타원체상 좌표입니다.<br/>
+        성공서비스는 변환에 성공한 서비스의 이름이며 여러 서비스에서 성공한 경우 바(|)로 연결됩니다.<br/>
+        편차는 1개의 서비스만 성공한 경우나 모두 일치한 경우 0이며, 여러 서비스가 성공한 경우 평균 좌표와의 표준편차입니다.<br/>
+        변환 결과는 표와 지도로 나타납니다.<br/>
     </div>
-    <button>변환 실행</button>
+    <div id="address_input">
+        <h3>여기에 변환할 주소를 입력해 주십시오. 여러 자료를 한번에 변환하시려면 여러 줄로 입력하시면 됩니다.</h3>
+        <textarea rows="10" cols="80">동대문구 장안동 320-10
+여기에 주소를 입력 (여러 줄도 가능)</textarea>
+    </div>
+    <div id="ui">
+        <select id="crs">
+            <option value="epsg_4326">EPSG:4326</option>
+        </select>
+        <button id="run">변환 실행</button>
+    </div>
     <div id="result_table">
         <table>
             <thead>
-                <tr><th>address</th><th>lng</th><th>lat</th><th>service</th><th>deviation</th></tr>
+                <tr><th>요청주소</th><th>변환주소</th><th>X</th><th>Y</th><th>경도</th><th>위도</th><th>성공서비스</th><th>편차</th></tr>
             </thead>
             <tbody>
-                <tr><td>주소</td><td>경도</td><td>위도</td><td>서비스</td><td>분산</td></tr>
+                <tr><td colspan="8">변환 결과가 이 곳에 표시됩니다.</td></tr>
             </tbody>
         </table>
     </div>
     <div id="map"></div>
-<script>
-    var map = L.map('map').setView([37.5, 127], 7);
-	baseLayer = L.tileLayer('https://{s}.tiles.mapbox.com/v3/{id}/{z}/{x}/{y}.png', {
-		maxZoom: 18,
-		attribution: 'Map data &copy; <a href="http://openstreetmap.org">OpenStreetMap</a> contributors, ' +
-			'<a href="http://creativecommons.org/licenses/by-sa/2.0/">CC-BY-SA</a>, ' +
-			'Imagery © <a href="http://mapbox.com">Mapbox</a>',
-		id: 'examples.map-20v6611k'
-	}).addTo(map);
-</script>
 </body>
 </html>
