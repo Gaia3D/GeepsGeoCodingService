@@ -8,7 +8,10 @@ import json
 from threading import Thread
 from pyproj import Proj
 from math import sqrt
+from difflib import SequenceMatcher
 import logging
+import re
+
 
 # 로깅 모드 설정
 logging.basicConfig(level=logging.INFO)
@@ -18,11 +21,11 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("failLogger")
 formatter = logging.Formatter('[%(levelname)s] %(asctime)s > %(message)s')
 fileHandler = logging.FileHandler("/temp/GeoCoding.log")
-streamHandler = logging.StreamHandler()
+# streamHandler = logging.StreamHandler()
 fileHandler.setFormatter(formatter)
-streamHandler.setFormatter(formatter)
+# streamHandler.setFormatter(formatter)
 logger.addHandler(fileHandler)
-logger.addHandler(streamHandler)
+# logger.addHandler(streamHandler)
 
 
 #import chardet
@@ -126,7 +129,8 @@ def geo_coding():
         output = request.args.get('output', 'json').lower()
         crs = request.args.get('crs', 'epsg:4326').lower()
 
-        # TODO: 입력 주소의 정제가 필요
+        # 입력 주소의 정제가 필요
+        q = format_address(q)
 
         # 인자 검사
         if not q:
@@ -158,14 +162,13 @@ def geo_coding():
         result = list()
 
         # auto의 경우 여러 서비스에 동시 문의
-        # TODO: 병렬처리 안되어 성능 심각
+        # http://bbolmin.tistory.com/164
         if source == "auto":
             # 쓰레드 이용하여 동시 호출: 네트워크 타임에서의 동시처리를 기대하지만 GIL 때문에 될지...
-            th1 = Thread(query(q, 'vworld', result))
-            th2 = Thread(query(q, 'vworld_new', result))
-            th3 = Thread(query(q, 'daum', result))
-            th4 = Thread(query(q, 'naver', result))
-
+            th1 = Thread(target=query, args=(q, 'vworld', result, ))
+            th2 = Thread(target=query, args=(q, 'vworld_new', result, ))
+            th3 = Thread(target=query, args=(q, 'daum', result, ))
+            th4 = Thread(target=query, args=(q, 'naver', result, ))
             th1.start()
             th2.start()
             th3.start()
@@ -193,7 +196,7 @@ def geo_coding():
             logger.info("ALL fail | {}".format(q))
 
             return make_response({"q": q, "x": None, "y": None, "lng": None, "lat": None, "address": None,
-                                  "sd": -1, "geojson": None})
+                                  "sd": -1, "sim_ratio": -1, "geojson": None})
 
         ### RETURN ###
         # 입력 주소값과 완전 동일한 주소를 반환하면 틀림 없는 것으로 판정
@@ -205,11 +208,13 @@ def geo_coding():
                 else:
                     x, y = prj(res["x"], res["y"])
 
+                address = res["address"]
+                sim_ratio = SequenceMatcher(None, q, address).ratio()
                 geojson = make_geojson(x, y, res["address"], res["service"], 0)
                 return make_response(
                     {
-                        "q": q, "x": x, "y": y, "lng": res["x"], "lat": res["y"], "address": res["address"],
-                        "sd": 0,
+                        "q": q, "x": x, "y": y, "lng": res["x"], "lat": res["y"], "address": address,
+                        "sd": 0, "sim_ratio": int(sim_ratio*100),
                         "geojson": geojson
                     }
                 )
@@ -223,11 +228,12 @@ def geo_coding():
             else:
                 x, y = prj(res["x"], res["y"])
 
+            address = res["address"]
             geojson = make_geojson(x, y, res["address"], res["service"], 0)
             return make_response(
                 {
-                    "q": q, "x": x, "y": y, "lng": res["x"], "lat": res["y"], "address": res["address"],
-                    "sd": 0,
+                    "q": q, "x": x, "y": y, "lng": res["x"], "lat": res["y"], "address": address,
+                    "sd": 0, "sim_ratio": 100,
                     "geojson": geojson
                 }
             )
@@ -265,6 +271,8 @@ def geo_coding():
                 base_data = list()
                 sum_x = sum_y = 0
 
+                max_sim_ratio = 0;
+
                 for i in range(len(result)):
                     res = result[i]
                     if not service:
@@ -272,12 +280,17 @@ def geo_coding():
                     else:
                         service = "{}|{}".format(service, res["service"])
 
-                    # 긴 주소가 맞는 것으로 판단
+                    # TODO: 유사도 판단을 4단계의 합으로 재개발 필요
+                    # 결과의 유사도 판단
+                    # http://stackoverflow.com/questions/17388213/python-string-similarity-with-probability
                     if not address:
                         address = str(res["address"])
-                    else:
-                        if len(res["address"]) > len(address):
-                            address = str(res["address"])
+
+                    sim_ratio = SequenceMatcher(None, q, address).ratio()
+                    if sim_ratio > max_sim_ratio:
+                        address = str(res["address"])
+                        max_sim_ratio = sim_ratio
+
                     deviation = sqrt((avg_x-points[i][0])**2 + (avg_y-points[i][1])**2)
 
                     if crs == "epsg:4326":
@@ -293,7 +306,7 @@ def geo_coding():
                 return make_response(
                     {
                         "q": q, "x": x, "y": y, "lng": res["x"], "lat": res["y"], "address": address,
-                        "sd": int(sd),
+                        "sd": int(sd), "sim_ratio": int(max_sim_ratio*100),
                         "geojson": make_geojson(sum_x/len(base_data), sum_y/len(base_data), address, service, 0),
                         "basedata": {
                             "type": "FeatureCollection",
@@ -360,10 +373,56 @@ def format_res(res, name):
         return "{}:\tError<br/>".format(name)
 
 
+def format_address(org_address):
+    out_address = re.sub(u"^한국\s", u"", org_address)
+    out_address = re.sub(u"^서울\s특별시\s", u"서울특별시 ", out_address)
+    out_address = re.sub(u"^서울\s", u"서울특별시 ", out_address)
+    out_address = re.sub(u"^서울시\s", u"서울특별시 ", out_address)
+    out_address = re.sub(u"^인천\s광역시\s", u"인천광역시 ", out_address)
+    out_address = re.sub(u"^인천\s", u"인천광역시 ", out_address)
+    out_address = re.sub(u"^인천시\s", u"인천광역시 ", out_address)
+    out_address = re.sub(u"^대구\s광역시\s", u"대구광역시 ", out_address)
+    out_address = re.sub(u"^대구\s", u"대구광역시 ", out_address)
+    out_address = re.sub(u"^대구시\s", u"대구광역시 ", out_address)
+    out_address = re.sub(u"^울산\s광역시\s", u"울산 ", out_address)
+    out_address = re.sub(u"^울산\s", u"울산 ", out_address)
+    out_address = re.sub(u"^울산시\s", u"울산 ", out_address)
+    out_address = re.sub(u"^부산\s광역시\s", u"부산광역시 ", out_address)
+    out_address = re.sub(u"^부산\s", u"부산광역시 ", out_address)
+    out_address = re.sub(u"^부산시\s", u"부산광역시 ", out_address)
+    out_address = re.sub(u"^광주\s광역시\s", u"광주광역시 ", out_address)
+    out_address = re.sub(u"^광주\s", u"광주광역시 ", out_address)
+    out_address = re.sub(u"^광주시\s", u"광주광역시 ", out_address)
+    out_address = re.sub(u"^대전\s광역시\s", u"대전광역시 ", out_address)
+    out_address = re.sub(u"^대전\s", u"대전광역시 ", out_address)
+    out_address = re.sub(u"^대전시\s", u"대전광역시 ", out_address)
+    out_address = re.sub(u"^경기\s", u"경기도 ", out_address)
+    out_address = re.sub(u"^강원\s", u"강원도 ", out_address)
+    out_address = re.sub(u"^경남\s", u"경상남도 ", out_address)
+    out_address = re.sub(u"^경남도\s", u"경상남도 ", out_address)
+    out_address = re.sub(u"^경북\s", u"경상북도 ", out_address)
+    out_address = re.sub(u"^경북도\s", u"경상북도 ", out_address)
+    out_address = re.sub(u"^제주\s", u"제주특별자치도 ", out_address)
+    out_address = re.sub(u"^제주도\s", u"제주특별자치도 ", out_address)
+    out_address = re.sub(u"^전남\s", u"전라남도 ", out_address)
+    out_address = re.sub(u"^전남도\s", u"전라남도 ", out_address)
+    out_address = re.sub(u"^전북\s", u"전라북도 ", out_address)
+    out_address = re.sub(u"^전북도\s", u"전라북도 ", out_address)
+    out_address = re.sub(u"^충남\s", u"충청남도 ", out_address)
+    out_address = re.sub(u"^충남도\s", u"충청남도 ", out_address)
+    out_address = re.sub(u"^충북\s", u"충청북도 ", out_address)
+    out_address = re.sub(u"^충북도\s", u"충청북도 ", out_address)
+    out_address = re.sub(u"\s산(\d+)", u' 산 \g<1>', out_address)
+    out_address = re.sub(u"(\d+)번지", u'\g<1>', out_address)
+    out_address = re.sub(u"\s(\d+가)\s", u'\g<1> ', out_address)
+
+    return out_address
+
+
 def query(q, service_name, result):
     try:
-        # TODO: 원본주서 전처리가 필요하다.
-
+        # 주소 전처리
+        # q = format_address(q)
 
         # 각 서비스별 키를 돌려가며 사용
         i = gKeyIndexDict[service_name] + 1
@@ -377,7 +436,7 @@ def query(q, service_name, result):
         encoded_str = urllib2.quote(q.encode("utf-8"))
         key = gKeyListDict[service_name][i]
         url = gQueryDict[service_name].format(q=encoded_str, key=key)
-        #print url
+        logger.debug(url)
 
         #f = urllib2.urlopen(url)
         # Accept-Language에 따라 응답이 달라지는 구글을 위해
@@ -386,7 +445,7 @@ def query(q, service_name, result):
         f = urllib2.urlopen(req)
         res = f.read()
         f.close()
-        #print res
+        # logger.debug(res)
         dic = json.loads(res, "utf-8")
         # json을 dict로 변환한 경우 그냥 보면 한글이 깨져 보이지만 실제는 문제 없다.
         # http://khanrc.tistory.com/entry/%ED%95%9C%EA%B8%80-in-the-dictionary-feat-pretty
@@ -395,21 +454,19 @@ def query(q, service_name, result):
         for i in range(len(items)):
             item = items[i]
             res_address = eval(gFieldAddressDict[service_name])
-            # TODO: 출력 주소의 정제가 필요
+            # 주소 정제
+            address = format_address(res_address)
             result.append(
                 {
                     'service': service_name,
                     'seq': i,
                     'x': float(eval(gFieldXDict[service_name])),
                     'y': float(eval(gFieldYDict[service_name])),
-                    'address': res_address,
+                    'address': address,
                     'org': item
                 }
             )
             break  # 유사 주소를 여러개 반환하는 Naver 때문에 1개만 반환
-
-        # TODO: 결과의 유사도 판단이 필요하다
-        # http://iam312.pe.kr/m/post/277
 
     except urllib2.HTTPError, e:
         raise Exception('HTTPError = ' + str(e.code))
@@ -424,4 +481,11 @@ def query(q, service_name, result):
 #############################
 # 서비스 실행
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=8888)
+    app.run()
+
+# TODO: flask 한 프로세스 당 1 요청만 처리할 수 있는 것 개선 필요
+# http://stackoverflow.com/questions/10938360/how-many-concurrent-requests-does-a-single-flask-process-receive
+
+# TODO: Apache WSGI로 실행 필요
+# http://flask-docs-kr.readthedocs.org/ko/latest/ko/deploying/mod_wsgi.html
+# http://flask.pocoo.org/docs/0.10/deploying/mod_wsgi/

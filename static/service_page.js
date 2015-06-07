@@ -62,8 +62,10 @@ function convertAddr() {
         var q = data[i];
         var url = "/geocoding/api?crs="+encodeURIComponent(crs)+"&q="+encodeURIComponent(q);
         $.getJSON(url, function(data) {
-            if (!data.geojson)
+            if (!data.geojson) {
+                $("#result_table table tbody").append("<tr><td>" + data.q + "</td><td colspan=7>변환 실패</td></tr>");
                 return;
+            }
 
             var x = data.x;
             var y = data.y;
@@ -71,7 +73,8 @@ function convertAddr() {
             var lat = data.lat;
             var address = data.address;
             var html = '<tr><td>'+data.q+'</td><td>'+address+'</td><td>'+ x.toFixed(2)+'</td><td>'+y.toFixed(2)+'</td>'
-            +'<td>'+lng.toFixed(5)+'</td><td>'+lat.toFixed(5)+'</td><td>'+data.geojson.properties.service+'</td><td>'+data.sd+'</td></tr>';
+                +'<td>'+lng.toFixed(5)+'</td><td>'+lat.toFixed(5)+'</td><td>'+data.geojson.properties.service+'</td>'
+                +'<td>'+data.sd+'</td><td>'+data.sim_ratio+'</td></tr>';
             $("#result_table table tbody").append(html);
 
             var marker = L.marker([lat, lng]);
