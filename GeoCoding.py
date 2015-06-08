@@ -104,6 +104,10 @@ gFieldAddressDict['google'] = "item['formatted_address']"
 # 거리 계산을 위한 좌표계
 gProj5179 = Proj(init='epsg:5179')
 
+gProvenceList = [u"서울특별시", u"부산광역시", u"인천광역시", u"대구광역시", u"광주광역시", u"대전광역시",
+                 u"울산광역시", u"경기도", u"강원도", u"충청남도", u"충청북도", u"전라남도", u"전라북도", u"경상남도",
+                 u"경상북도", u"제주특별자치도"]
+
 
 @app.route("/geocoding/service_page", methods=['GET'])
 def service_page():
@@ -202,19 +206,18 @@ def geo_coding():
         # 입력 주소값과 완전 동일한 주소를 반환하면 틀림 없는 것으로 판정
         for res in result:
             address = res["address"]
-            if address == q:
+            if get_sim_ratio(q, address) == 1.0:
                 if crs == "epsg:4326":
                     x, y = res["x"], res["y"]
                 else:
                     x, y = prj(res["x"], res["y"])
 
                 address = res["address"]
-                sim_ratio = SequenceMatcher(None, q, address).ratio()
                 geojson = make_geojson(x, y, res["address"], res["service"], 0)
                 return make_response(
                     {
                         "q": q, "x": x, "y": y, "lng": res["x"], "lat": res["y"], "address": address,
-                        "sd": 0, "sim_ratio": int(sim_ratio*100),
+                        "sd": 0, "sim_ratio": 100,
                         "geojson": geojson
                     }
                 )
@@ -229,11 +232,12 @@ def geo_coding():
                 x, y = prj(res["x"], res["y"])
 
             address = res["address"]
+            sim_ratio = get_sim_ratio(q, address)
             geojson = make_geojson(x, y, res["address"], res["service"], 0)
             return make_response(
                 {
                     "q": q, "x": x, "y": y, "lng": res["x"], "lat": res["y"], "address": address,
-                    "sd": 0, "sim_ratio": 100,
+                    "sd": 0, "sim_ratio": int(sim_ratio*100),
                     "geojson": geojson
                 }
             )
@@ -276,19 +280,17 @@ def geo_coding():
                 for i in range(len(result)):
                     res = result[i]
                     if not service:
-                        service = str(res["service"])
+                        service = unicode(res["service"])
                     else:
                         service = "{}|{}".format(service, res["service"])
 
-                    # TODO: 유사도 판단을 4단계의 합으로 재개발 필요
                     # 결과의 유사도 판단
-                    # http://stackoverflow.com/questions/17388213/python-string-similarity-with-probability
                     if not address:
-                        address = str(res["address"])
+                        address = unicode(res["address"])
 
-                    sim_ratio = SequenceMatcher(None, q, address).ratio()
+                    sim_ratio = get_sim_ratio(q, address)
                     if sim_ratio > max_sim_ratio:
-                        address = str(res["address"])
+                        address = unicode(res["address"])
                         max_sim_ratio = sim_ratio
 
                     deviation = sqrt((avg_x-points[i][0])**2 + (avg_y-points[i][1])**2)
@@ -343,6 +345,65 @@ def geo_coding():
         return "[ERROR] {}".format(err)
 
 
+# 주소 유사도 판단
+def get_sim_ratio(org_addr, out_addr, elseif=None):
+    # 결과의 유사도 판단
+    # http://stackoverflow.com/questions/17388213/python-string-similarity-with-probability
+
+    org_addr = org_addr.strip()
+    out_addr = out_addr.strip()
+
+    # 주소를 4부분으로 나누어 테스트
+    org_word_list = org_addr.split(" ")
+
+    if len(org_word_list) == 0:
+        org_word_list = ["", "", "", ""]
+
+    # 처음이 시도 리스트에 없는 단어면 시도가 빠진 것으로 판단
+    if gProvenceList.count(org_word_list[0]) <= 0:
+        org_word_list.insert(0, "")
+
+    if len(org_word_list) == 1:
+        org_word_list.extend(["", "", ""])
+    elif len(org_word_list) == 2:
+        org_word_list.extend(["", ""])
+    elif len(org_word_list) == 3:
+        org_word_list.extend([""])
+    elif len(org_word_list) > 4:
+        list1 = org_word_list[:3]
+        etc_address = " ".join(org_word_list[3:])
+        org_word_list = list1
+        org_word_list.append(etc_address)
+
+    out_word_list = out_addr.split(" ")
+    if len(out_word_list) == 0:
+        out_word_list = ["", "", "", ""]
+    elif len(out_word_list) == 1:
+        out_word_list.extend(["", "", ""])
+    elif len(out_word_list) == 2:
+        out_word_list.extend(["", ""])
+    elif len(out_word_list) == 3:
+        out_word_list.extend([""])
+    elif len(out_word_list) > 4:
+        list1 = out_word_list[:3]
+        etc_address = " ".join(out_word_list[3:])
+        out_word_list = list1
+        out_word_list.append(etc_address)
+
+    total_sim_ratio = 0
+    for i in range(4):
+        if org_word_list[i] == "" or out_word_list[i] == "":
+            pass
+        else:
+            total_sim_ratio += SequenceMatcher(None, org_word_list[i], out_word_list[i]).ratio() * 0.25
+
+    # 주소 형식이 완전히 이상한 경우 전체로 테스트
+    if total_sim_ratio == 0:
+        total_sim_ratio = SequenceMatcher(None, org_addr, out_addr).ratio()
+
+    return total_sim_ratio
+
+
 # dict을 json으로 변환하며 mimetype과 charset을 지정
 def make_response(dictionary):
     ret = Response(json.dumps(dictionary, ensure_ascii=False), mimetype='application/json')
@@ -374,7 +435,9 @@ def format_res(res, name):
 
 
 def format_address(org_address):
-    out_address = re.sub(u"^한국\s", u"", org_address)
+    out_address = re.sub(u"\s", u" ", org_address)
+    out_address = re.sub(u"  ", u" ", out_address)
+    out_address = re.sub(u"^한국\s", u"", out_address)
     out_address = re.sub(u"^서울\s특별시\s", u"서울특별시 ", out_address)
     out_address = re.sub(u"^서울\s", u"서울특별시 ", out_address)
     out_address = re.sub(u"^서울시\s", u"서울특별시 ", out_address)
@@ -384,9 +447,9 @@ def format_address(org_address):
     out_address = re.sub(u"^대구\s광역시\s", u"대구광역시 ", out_address)
     out_address = re.sub(u"^대구\s", u"대구광역시 ", out_address)
     out_address = re.sub(u"^대구시\s", u"대구광역시 ", out_address)
-    out_address = re.sub(u"^울산\s광역시\s", u"울산 ", out_address)
-    out_address = re.sub(u"^울산\s", u"울산 ", out_address)
-    out_address = re.sub(u"^울산시\s", u"울산 ", out_address)
+    out_address = re.sub(u"^울산\s광역시\s", u"울산광역시 ", out_address)
+    out_address = re.sub(u"^울산\s", u"울산광역시 ", out_address)
+    out_address = re.sub(u"^울산시\s", u"울산광역시 ", out_address)
     out_address = re.sub(u"^부산\s광역시\s", u"부산광역시 ", out_address)
     out_address = re.sub(u"^부산\s", u"부산광역시 ", out_address)
     out_address = re.sub(u"^부산시\s", u"부산광역시 ", out_address)
@@ -415,6 +478,8 @@ def format_address(org_address):
     out_address = re.sub(u"\s산(\d+)", u' 산 \g<1>', out_address)
     out_address = re.sub(u"(\d+)번지", u'\g<1>', out_address)
     out_address = re.sub(u"\s(\d+가)\s", u'\g<1> ', out_address)
+    out_address = re.sub(u"\s(\d+동)\s", u'\g<1> ', out_address)
+    out_address = re.sub(u"\s(\d+리)\s", u'\g<1> ', out_address)
 
     return out_address
 
@@ -469,8 +534,10 @@ def query(q, service_name, result):
             break  # 유사 주소를 여러개 반환하는 Naver 때문에 1개만 반환
 
     except urllib2.HTTPError, e:
+        logger.error('HTTPError = {}: {}'.format(str(e.code), e.geturl()))
         raise Exception('HTTPError = ' + str(e.code))
     except urllib2.URLError, e:
+        logger.error('URLError = {}: {}'.format(str(e.reason), e.filename))
         raise Exception('URLError = ' + str(e.reason))
     except Exception:
         # 변환 실패의 경우 예상 포맷대로 들어오지 않음

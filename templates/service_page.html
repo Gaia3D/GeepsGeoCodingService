@@ -10,6 +10,8 @@
     <script src="{{ url_for('static', filename='leaflet.js') }}"></script>
     <script src="{{ url_for('static', filename='jquery-1.11.3.min.js') }}"></script>
     <script src="{{ url_for('static', filename='service_page.js') }}" charset="UTF-8"></script>
+    <link rel="stylesheet" href="//code.jquery.com/ui/1.11.4/themes/smoothness/jquery-ui.css">
+    <script src="//code.jquery.com/ui/1.11.4/jquery-ui.js"></script>
 </head>
 <body>
     <h1>GEEPS 주소->좌표 변환 서비스</h1>
@@ -32,6 +34,10 @@
         </select>
         <button id="run">변환 실행</button>
     </div>
+    <div id="dialog" title="GeoCoding" style="display: None;">
+        <div id="progressbar"></div>
+        주소 변환 실행중...(<spen id="percent">0</spen>%)
+    </div>
     <div id="result_table">
         <table>
             <thead>
@@ -43,5 +49,6 @@
         </table>
     </div>
     <div id="map"></div>
+
 </body>
 </html>

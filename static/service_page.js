@@ -29,6 +29,13 @@ function onLoad() {
     // 버튼 동작 부착
     $("button").on("click", onClickButton);
     $("#address_input textarea").on("click", onClickTextarea);
+
+    // progress
+    progress = $( "#progressbar" ).progressbar({
+      value: 0
+    });
+
+
 }
 
 function onClickButton() {
@@ -49,21 +56,58 @@ function onClickTextarea() {
     $("#address_input textarea").select();
 }
 
+
+function stopConvert() {
+    gStopFlag = true;
+}
+
 var markerGroup;
 function convertAddr() {
     var data = $("#address_input textarea").val().trim().split("\n");
     var crs = $("#crs").val();
 
-    // 초기화
+    // 변환결과 초기화
     $("#result_table table tbody").html("");
     if (markerGroup) map.removeLayer(markerGroup);
     markerGroup = L.layerGroup().addTo(map);
+
+    // Modal dialog
+    dialog = $("#dialog").dialog({
+        autoOpen: false,
+        height: 150,
+        width: 350,
+        modal: true,
+        buttons: null
+    });
+    progress.progressbar("option", "value", 0);
+    dialog.dialog( "open" );
+    gStopFlag = false;
+
+    gNumTotal = data.length;
+    gNumProcessed = 0;
+    progress.progressbar("option", "max", gNumTotal);
+
     for (var i in data) {
         var q = data[i];
         var url = "/geocoding/api?crs="+encodeURIComponent(crs)+"&q="+encodeURIComponent(q);
+
+        if (gStopFlag) {
+            gStopFlag = false;
+            dialog.dialog( "close" );
+            return;
+        }
+
         $.getJSON(url, function(data) {
+            progress.progressbar("option", "value", ++gNumProcessed);
+            $("#percent").html((gNumProcessed*100/gNumTotal).toFixed(0));
+            if (gNumProcessed >= gNumTotal) {
+                gStopFlag = false;
+                dialog.dialog( "close" );
+            }
+
             if (!data.geojson) {
                 $("#result_table table tbody").append("<tr><td>" + data.q + "</td><td colspan=7>변환 실패</td></tr>");
+
                 return;
             }
 
