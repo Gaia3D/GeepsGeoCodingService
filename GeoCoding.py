@@ -109,11 +109,19 @@ gProvenceList = [u"서울특별시", u"부산광역시", u"인천광역시", u"�
                  u"경상북도", u"제주특별자치도"]
 
 
+@app.route("/test", methods=['GET'])
+@app.route("/geocoding/test", methods=['GET'])
+def test():
+    return 'TEST SUCCESS'
+
+
+@app.route("/service_page", methods=['GET'])
 @app.route("/geocoding/service_page", methods=['GET'])
 def service_page():
     return render_template("service_page.html")
 
 
+@app.route("/capabilities", methods=['GET'])
 @app.route("/geocoding/capabilities", methods=['GET'])
 def getcapabilities():
     capabilities = {
@@ -125,6 +133,7 @@ def getcapabilities():
 
 
 # 실제 GeoCoding 서비스
+@app.route("/api", methods=['GET'])
 @app.route("/geocoding/api", methods=['GET'])
 def geo_coding():
     try:
@@ -550,9 +559,23 @@ def query(q, service_name, result):
 if __name__ == '__main__':
     app.run()
 
-# TODO: flask 한 프로세스 당 1 요청만 처리할 수 있는 것 개선 필요
+# 기본 서비스로 실행시 flask 한 프로세스 당 1 요청만 처리할 수 있어 성능에 심각한 문제
 # http://stackoverflow.com/questions/10938360/how-many-concurrent-requests-does-a-single-flask-process-receive
 
-# TODO: Apache WSGI로 실행 필요
+# Apache WSGI로 실행 필요
 # http://flask-docs-kr.readthedocs.org/ko/latest/ko/deploying/mod_wsgi.html
 # http://flask.pocoo.org/docs/0.10/deploying/mod_wsgi/
+"""
+### httpd.conf
+
+# Call Python GeoCoding module by WSGI
+LoadModule wsgi_module modules/mod_wsgi-py27-VC9.so
+<VirtualHost *>
+    ServerName localhost
+    WSGIScriptAlias /geocoding c:\_gitRepo\GeepsGeoCodingService\GeoCoding.wsgi
+    <Directory c:\_gitRepo\GeepsGeoCodingService>
+        Order deny,allow
+        Require all granted
+    </Directory>
+</VirtualHost>
+"""
