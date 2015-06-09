@@ -141,6 +141,8 @@ def geo_coding():
         source = request.args.get('source', 'auto').lower()
         output = request.args.get('output', 'json').lower()
         crs = request.args.get('crs', 'epsg:4326').lower()
+        # 입력된 id가 있으면 보존되게 수정
+        id = request.args.get('id', None).lower()
 
         # 입력 주소의 정제가 필요
         q = format_address(q)
@@ -209,7 +211,7 @@ def geo_coding():
             logger.info("ALL fail | {}".format(q))
 
             return make_response({"q": q, "x": None, "y": None, "lng": None, "lat": None, "address": None,
-                                  "sd": -1, "sim_ratio": -1, "geojson": None})
+                                  "sd": -1, "sim_ratio": -1, "geojson": None}, id)
 
         ### RETURN ###
         # 입력 주소값과 완전 동일한 주소를 반환하면 틀림 없는 것으로 판정
@@ -228,7 +230,7 @@ def geo_coding():
                         "q": q, "x": x, "y": y, "lng": res["x"], "lat": res["y"], "address": address,
                         "sd": 0, "sim_ratio": 100,
                         "geojson": geojson
-                    }
+                    }, id
                 )
 
         ### RETURN ###
@@ -248,7 +250,7 @@ def geo_coding():
                     "q": q, "x": x, "y": y, "lng": res["x"], "lat": res["y"], "address": address,
                     "sd": 0, "sim_ratio": int(sim_ratio*100),
                     "geojson": geojson
-                }
+                }, id
             )
 
         # 오차범위로 줄어들거나 2개만 남을 때까지 반복해 실행
@@ -323,7 +325,7 @@ def geo_coding():
                             "type": "FeatureCollection",
                             "features": base_data
                         }
-                    }
+                    }, id
                 )
 
             # 통계적으로 튀는 값을 판별하는 방식이 있음
@@ -414,7 +416,9 @@ def get_sim_ratio(org_addr, out_addr, elseif=None):
 
 
 # dict을 json으로 변환하며 mimetype과 charset을 지정
-def make_response(dictionary):
+def make_response(dictionary, id=None):
+    if id:
+        dictionary["id"] = id
     ret = Response(json.dumps(dictionary, ensure_ascii=False), mimetype='application/json')
     ret.content_encoding = 'utf-8'
     return ret
@@ -444,8 +448,7 @@ def format_res(res, name):
 
 
 def format_address(org_address):
-    out_address = re.sub(u"\s", u" ", org_address)
-    out_address = re.sub(u"  ", u" ", out_address)
+    out_address = re.sub(u"\s+", u" ", org_address)
     out_address = re.sub(u"^한국\s", u"", out_address)
     out_address = re.sub(u"^서울\s특별시\s", u"서울특별시 ", out_address)
     out_address = re.sub(u"^서울\s", u"서울특별시 ", out_address)
@@ -485,10 +488,16 @@ def format_address(org_address):
     out_address = re.sub(u"^충북\s", u"충청북도 ", out_address)
     out_address = re.sub(u"^충북도\s", u"충청북도 ", out_address)
     out_address = re.sub(u"\s산(\d+)", u' 산 \g<1>', out_address)
-    out_address = re.sub(u"(\d+)번지", u'\g<1>', out_address)
     out_address = re.sub(u"\s(\d+가)\s", u'\g<1> ', out_address)
     out_address = re.sub(u"\s(\d+동)\s", u'\g<1> ', out_address)
     out_address = re.sub(u"\s(\d+리)\s", u'\g<1> ', out_address)
+    out_address = re.sub(u"\s(\d+)번지\s*(\d+)호", u'\g<1>-\g<2>', out_address)
+    out_address = re.sub(u"(\d+)번지", u'\g<1>', out_address)
+    out_address = re.sub(u"\(.*\)", u'', out_address)  # 새주소 동명 및 건물명 제거
+    out_address = re.sub(u"동(\d+)", u'동 \g<1>', out_address)
+    out_address = re.sub(u"리(\d+)", u'리 \g<1>', out_address)
+    out_address = re.sub(u"가(\d+)", u'가 \g<1>', out_address)
+    out_address = re.sub(u"길(\d+)", u'길 \g<1>', out_address)
 
     return out_address
 
@@ -572,8 +581,8 @@ if __name__ == '__main__':
 LoadModule wsgi_module modules/mod_wsgi-py27-VC9.so
 <VirtualHost *>
     ServerName localhost
-    WSGIScriptAlias /geocoding c:\_gitRepo\GeepsGeoCodingService\GeoCoding.wsgi
-    <Directory c:\_gitRepo\GeepsGeoCodingService>
+    WSGIScriptAlias /geocoding d:\www_python\GeepsGeoCodingService\GeoCoding.wsgi
+    <Directory d:\www_python\GeepsGeoCodingService>
         Order deny,allow
         Require all granted
     </Directory>
