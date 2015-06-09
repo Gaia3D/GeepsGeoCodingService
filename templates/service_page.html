@@ -2,10 +2,10 @@
 <html>
 <head lang="ko">
     <meta charset="UTF-8">
-    <title>주소->좌표 변환서비스</title>
+    <title>주소 &rarr; 좌표 변환서비스</title>
     <link rel=stylesheet type=text/css href="{{ url_for('static', filename='leaflet.css') }}">
+    <link rel=stylesheet type=text/css href="{{ url_for('static', filename='service_page.css') }}">
     <style>
-        #map {height: 300px; width: 100%}
     </style>
     <script src="{{ url_for('static', filename='leaflet.js') }}"></script>
     <script src="{{ url_for('static', filename='jquery-1.11.3.min.js') }}"></script>
@@ -14,7 +14,7 @@
     <script src="//code.jquery.com/ui/1.11.4/jquery-ui.js"></script>
 </head>
 <body>
-    <h1>GEEPS 주소->좌표 변환 서비스</h1>
+    <h1>GEEPS 주소 &rarr; 좌표 변환 서비스</h1>
     <div id="desc">
         VWorld, Daum, Naver, Google의 GeoCoding 서비스를 종합적으로 이용하여 변환성공률을 높인 주소->좌표 변환 서비스입니다.<br/>
         구주소와 도로명주소 모두 변환 가능하며, 섞여있는 경우에도 문제 없이 변환 가능합니다.<br/>
@@ -32,7 +32,7 @@
         <select id="crs">
             <option value="epsg_4326">EPSG:4326</option>
         </select>
-        <button id="run">변환 실행</button>
+        <button id="run" class="btn">변환 실행</button>
     </div>
     <div id="dialog" title="GeoCoding" style="display: None;">
         <div id="progressbar"></div>

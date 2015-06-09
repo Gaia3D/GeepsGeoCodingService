@@ -98,7 +98,8 @@ function convertAddr() {
         }
 
         $.getJSON(url, function(data) {
-            progress.progressbar("option", "value", ++gNumProcessed);
+            ++gNumProcessed;
+            progress.progressbar("option", "value", gNumProcessed);
             $("#percent").html((gNumProcessed*100/gNumTotal).toFixed(0));
             if (gNumProcessed >= gNumTotal) {
                 gStopFlag = false;
@@ -106,7 +107,7 @@ function convertAddr() {
             }
 
             if (!data.geojson) {
-                $("#result_table table tbody").append("<tr><td>" + data.q + "</td><td colspan=7>변환 실패</td></tr>");
+                $("#result_table table tbody").append("<tr><td>" + data.q + "</td><td colspan=8>변환 실패</td></tr>");
 
                 return;
             }
@@ -124,6 +125,15 @@ function convertAddr() {
             var marker = L.marker([lat, lng]);
             marker.bindPopup(address);
             marker.addTo(markerGroup);
+        })
+        .fail(function () {
+            ++gNumProcessed;
+            progress.progressbar("option", "value", gNumProcessed);
+            $("#percent").html((gNumProcessed*100/gNumTotal).toFixed(0));
+            if (gNumProcessed >= gNumTotal) {
+                gStopFlag = false;
+                dialog.dialog( "close" );
+            }
         });
     }
 }
