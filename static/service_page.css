@@ -35,7 +35,7 @@ background-color: transparent;
 }
 
 #map {height: 300px; width: 100%; }
-#result_table {max-height: 500px; }
+#result_table_div {max-height: 500px; }
 
 /* 공통적용 */
 button.btn {
@@ -71,20 +71,20 @@ color:#0062c3;
 margin:20px 0;
 border-top:1px dotted #3c81c3;
 }
-#result_table {
+#result_table_div {
 overflow:auto;
 }
-#result_table table {
+#result_table_div table {
 width:100%;
 border-top: 2px solid #454a56;
 border-collapse:collapse;
 }
-#result_table table thead th {
+#result_table_div table thead th {
 padding:3px;
 border-bottom: 1px solid #e0e1e2;
 background-color: #efefef;;
 }
-#result_table table th,td {
+#result_table_div table th,td {
 padding:3px;
 border: 1px solid #e0e1e2;
 }
