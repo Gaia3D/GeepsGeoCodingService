@@ -147,9 +147,12 @@ def geo_coding():
         crs = request.args.get('crs', 'epsg:4326').lower()
         # 입력된 id가 있으면 보존되게 수정
         id = request.args.get('id', None)
+        # 입력 주소 정제를 안하는 옵션 추가
+        fix_address = request.args.get('fix_address','').lower()
 
         # 입력 주소의 정제가 필요
-        q = format_address(q)
+        if fix_address != "off" and fix_address != 'no':
+            q = format_address(q)
 
         # 인자 검사
         if not q:
@@ -453,9 +456,6 @@ def format_res(res, name):
 
 def query(q, service_name, result):
     try:
-        # 주소 전처리
-        # q = format_address(q)
-
         # 각 서비스별 키를 돌려가며 사용
         i = gKeyIndexDict[service_name] + 1
         if i >= len(gKeyListDict[service_name]):
