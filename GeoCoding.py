@@ -293,7 +293,9 @@ def geo_coding():
                 base_data = list()
                 sum_x = sum_y = 0
 
-                max_sim_ratio = 0;
+                max_sim_ratio = 0
+                res_x, res_y = None, None
+                res_lng, res_lat = None, None
 
                 for i in range(len(result)):
                     res = result[i]
@@ -306,13 +308,6 @@ def geo_coding():
                     if not address:
                         address = unicode(res["address"])
 
-                    sim_ratio = get_sim_ratio(q, address)
-                    if sim_ratio > max_sim_ratio:
-                        address = unicode(res["address"])
-                        max_sim_ratio = sim_ratio
-
-                    deviation = sqrt((avg_x-points[i][0])**2 + (avg_y-points[i][1])**2)
-
                     if crs == "epsg:4326":
                         x, y = res["x"], res["y"]
                     else:
@@ -320,14 +315,25 @@ def geo_coding():
                     sum_x += x
                     sum_y += y
 
+                    sim_ratio = get_sim_ratio(q, address)
+                    if sim_ratio >= max_sim_ratio:
+                        address = unicode(res["address"])
+                        max_sim_ratio = sim_ratio
+                        res_lng, res_lat = res["x"], res["y"]
+                        res_x, res_y = x, y
+
+                    deviation = sqrt((avg_x-points[i][0])**2 + (avg_y-points[i][1])**2)
+
                     geojson = make_geojson(x, y, res["address"], res["service"], int(deviation))
                     base_data.append(geojson)
 
                 return make_response(
                     {
-                        "q": q, "x": x, "y": y, "lng": res["x"], "lat": res["y"], "address": address,
+                        "q": q, "x": res_x, "y": res_y, "lng": res_lng, "lat": res_lat, "address": address,
                         "sd": int(sd), "sim_ratio": int(max_sim_ratio*100),
-                        "geojson": make_geojson(sum_x/len(base_data), sum_y/len(base_data), address, service, 0),
+                        #"geojson": make_geojson(sum_x/len(base_data), sum_y/len(base_data), address, service, 0),
+                        # 평균좌표 대신 유사주표 좌표 사용으로 변경
+                        "geojson": make_geojson(res_x, res_y, address, service, 0),
                         "basedata": {
                             "type": "FeatureCollection",
                             "features": base_data
