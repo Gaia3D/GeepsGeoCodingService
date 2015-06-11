@@ -4,6 +4,8 @@
 $(document).ready(onLoad);
 
 var map;
+var dialog;
+var progress;
 
 function onLoad() {
     // 지도 초기화
@@ -19,8 +21,8 @@ function onLoad() {
     // 좌표계 리스트 채우기
     $.getJSON("./capabilities", function(data) {
         var items = [];
-        for (i in data.projections) {
-            crs = data.projections[i];
+        for (var i=0; i<data.projections.length; i++) {
+            var crs = data.projections[i];
             items.push('<option value="'+crs+'">'+crs.toUpperCase()+'</option>');
         }
         $("#crs").html(items.join(""))
@@ -35,7 +37,12 @@ function onLoad() {
       value: 0
     });
 
-
+    // For IE 9 below, there is no String.trim() function
+    if(typeof String.prototype.trim !== 'function') {
+        String.prototype.trim = function() {
+            return this.replace(/^\s+|\s+$/g, '');
+        }
+    }
 }
 
 function onClickButton() {
@@ -77,11 +84,12 @@ function convertAddr() {
     // Modal dialog
     dialog = $("#dialog").dialog({
         autoOpen: false,
-        height: 150,
-        width: 350,
+        //height: 150,
+        //width: 350,
         modal: true,
         buttons: null
     });
+
     progress.progressbar("option", "value", 0);
     dialog.dialog( "open" );
     gStopFlag = false;
