@@ -46,12 +46,21 @@ def format_address(org_address):
     out_address = re.sub(u"\s(\d+동)\s", u'\g<1> ', out_address)
     out_address = re.sub(u"\s(\d+리)\s", u'\g<1> ', out_address)
     out_address = re.sub(u"\s(\d+)번지\s*(\d+)호", u'\g<1>-\g<2>', out_address)
-    out_address = re.sub(u"(\d+)번지", u'\g<1>', out_address)
+    out_address = re.sub(u"(\S)(\d+)번지\s*(\d+)호", u'\g<1> \g<2>-\g<3>', out_address)
+    out_address = re.sub(u"\s+(\d+)호", u' \g<1>', out_address)
+    out_address = re.sub(u"(\d+)번지\s", u'\g<1>', out_address)
+    out_address = re.sub(u"(\d+)번지$", u'\g<1>', out_address)
     out_address = re.sub(u"\(.*\)", u'', out_address)  # 새주소 동명 및 건물명 제거
     out_address = re.sub(u"동(\d+)", u'동 \g<1>', out_address)
     out_address = re.sub(u"리(\d+)", u'리 \g<1>', out_address)
     out_address = re.sub(u"가(\d+)", u'가 \g<1>', out_address)
     out_address = re.sub(u"길(\d+)", u'길 \g<1>', out_address)
+    out_address = re.sub(u"(\D+)(\d+\-\d+)$", u'\g<1> \g<2>', out_address)
+    out_address = re.sub(u"(\D+)(\d+)$", u'\g<1> \g<2>', out_address)
+    out_address = re.sub(u"(\d+)\s*\-\s*(\d+)", u'\g<1>-\g<2>', out_address)  # 번지 주변 빈칸 제거
+    out_address = re.sub(u"\s+", u" ", out_address)  # 연속 빈칸을 하나로
+    out_address = out_address.strip()  # 처음과 끝의 공백 제거
+    out_address = re.sub(u"(\d+)\s+\D+$", u'\g<1>', out_address)  # 번지 뒤 건물명 등 제거
 
     return out_address
 
