@@ -17,8 +17,8 @@ from FixAddress import format_address
 
 # 로깅 모드 설정
 logging.basicConfig(level=logging.INFO)
-#LOG_FILE_PATH = "D:/www_python/GeoCoding.log"
-LOG_FILE_PATH = "/temp/GeoCoding.log"
+LOG_FILE_PATH = "D:/www_python/GeoCoding.log"
+#LOG_FILE_PATH = "/temp/GeoCoding.log"
 
 # 로깅 형식 지정
 # http://gyus.me/?p=418
