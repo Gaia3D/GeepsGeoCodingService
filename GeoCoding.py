@@ -71,14 +71,14 @@ gKeyListDict['google'] = ['']
 """
 
 gKeyIndexDict['vworld'] = 0
-gQueryDict['vworld'] = "http://apis.vworld.kr/jibun2coord.do?q={q}&apiKey={key}&domain=http://175.116.155.143&output=json&epsg=4326"
+gQueryDict['vworld'] = "http://apis.vworld.kr/jibun2coord.do?q={q}&apiKey={key}&domain=http://geeps.krihs.re.kr&output=json&epsg=4326"
 gResFilterDict['vworld'] = "[dic]"
 gFieldXDict['vworld'] = "item['EPSG_4326_X']"
 gFieldYDict['vworld'] = "item['EPSG_4326_Y']"
 gFieldAddressDict['vworld'] = "item['JUSO']"
 
 gKeyIndexDict['vworld_new'] = 0
-gQueryDict['vworld_new'] = "http://apis.vworld.kr/new2coord.do?q={q}&apiKey={key}&domain=http://175.116.155.143&output=json&epsg=4326"
+gQueryDict['vworld_new'] = "http://apis.vworld.kr/new2coord.do?q={q}&apiKey={key}&domain=http://geeps.krihs.re.kr&output=json&epsg=4326"
 gResFilterDict['vworld_new'] = "[dic]"
 gFieldXDict['vworld_new'] = "item['EPSG_4326_X']"
 gFieldYDict['vworld_new'] = "item['EPSG_4326_Y']"
