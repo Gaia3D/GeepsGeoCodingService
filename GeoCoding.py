@@ -10,6 +10,7 @@ from pyproj import Proj
 from math import sqrt
 from difflib import SequenceMatcher
 import logging
+import os.path
 
 # 주소 정제를 위한 함수를 별도 파일로 분리
 from FixAddress import format_address
@@ -17,8 +18,8 @@ from FixAddress import format_address
 
 # 로깅 모드 설정
 logging.basicConfig(level=logging.INFO)
-LOG_FILE_PATH = "D:/www_python/GeoCoding.log"
-#LOG_FILE_PATH = "/temp/GeoCoding.log"
+crr_path = os.path.dirname(os.path.realpath(__file__))
+LOG_FILE_PATH = os.path.join(crr_path, "..//GeoCoding.log")
 
 # 로깅 형식 지정
 # http://gyus.me/?p=418
@@ -71,14 +72,14 @@ gKeyListDict['google'] = ['']
 """
 
 gKeyIndexDict['vworld'] = 0
-gQueryDict['vworld'] = "http://apis.vworld.kr/jibun2coord.do?q={q}&apiKey={key}&domain=http://geeps.krihs.re.kr&output=json&epsg=4326"
+gQueryDict['vworld'] = "http://apis.vworld.kr/jibun2coord.do?q={q}&apiKey={key}&domain=http://ligcorp.com&output=json&epsg=4326"
 gResFilterDict['vworld'] = "[dic]"
 gFieldXDict['vworld'] = "item['EPSG_4326_X']"
 gFieldYDict['vworld'] = "item['EPSG_4326_Y']"
 gFieldAddressDict['vworld'] = "item['JUSO']"
 
 gKeyIndexDict['vworld_new'] = 0
-gQueryDict['vworld_new'] = "http://apis.vworld.kr/new2coord.do?q={q}&apiKey={key}&domain=http://geeps.krihs.re.kr&output=json&epsg=4326"
+gQueryDict['vworld_new'] = "http://apis.vworld.kr/new2coord.do?q={q}&apiKey={key}&domain=http://ligcorp.com&output=json&epsg=4326"
 gResFilterDict['vworld_new'] = "[dic]"
 gFieldXDict['vworld_new'] = "item['EPSG_4326_X']"
 gFieldYDict['vworld_new'] = "item['EPSG_4326_Y']"
@@ -371,6 +372,228 @@ def geo_coding():
         return "[ERROR] {}".format(err)
 
 
+# 건보를 위한 GeoCoding 서비스
+@app.route("/vworld", methods=['GET'])
+@app.route("/geocoding/vworld", methods=['GET'])
+def geo_coding_vworld():
+    try:
+        q = request.args.get('q', None)
+        source = request.args.get('source', 'auto').lower()
+        output = request.args.get('output', 'json').lower()
+        crs = request.args.get('crs', 'epsg:4326').lower()
+        # 입력된 id가 있으면 보존되게 수정
+        id = request.args.get('id', None)
+        # 입력 주소 정제를 안하는 옵션 추가
+        fix_address = request.args.get('fix_address','').lower()
+
+        # 입력 주소의 정제가 필요
+        if fix_address != "off" and fix_address != 'no':
+            q = format_address(q)
+
+        # 인자 검사
+        if not q:
+            raise Exception("'q' argument is necessary.")
+
+        if source not in gSourceList:
+            raise Exception("invalid 'source' argument: {}.".format(source))
+
+        if output not in gOutputList:
+            raise Exception("invalid 'output' argument: {}.".format(output))
+
+        if crs not in gCrsList:
+            raise Exception("invalid 'crs' argument: {}.".format(crs))
+
+        # q 인자의 코드페이지 판단
+        # http://egloos.zum.com/mcchae/v/10726217
+        # http://stackoverflow.com/questions/4239666/getting-bytes-from-unicode-string-in-python
+        """
+        chars = q.encode()
+        char_detect = chardet.detect(chars)
+        # 하지만 EUC-KR도 99% 확률로 UTF-8로 나와 좌절.
+        # q2 = unicode(chars, 'euc-kr').encode('utf-8')
+        detect_res = '[CHARDET] Encoding: {}, Confidence: {}'\
+            .format(char_detect['encoding'], char_detect['confidence']*100)
+        print detect_res
+        """
+
+        # 각 서비스의 조회 결과 담을 리스트
+        result = list()
+
+        # auto의 경우 여러 서비스에 동시 문의
+        # http://bbolmin.tistory.com/164
+        if source == "auto":
+            # 쓰레드 이용하여 동시 호출: 네트워크 타임에서의 동시처리를 기대하지만 GIL 때문에 될지...
+            th1 = Thread(target=query, args=(q, 'vworld', result, ))
+            th2 = Thread(target=query, args=(q, 'vworld_new', result, ))
+            th3 = Thread(target=query, args=(q, 'daum', result, ))
+            th4 = Thread(target=query, args=(q, 'naver', result, ))
+            th1.start()
+            th2.start()
+            th3.start()
+            th4.start()
+            th1.join()
+            th2.join()
+            th3.join()
+            th4.join()
+
+            # 모두 실패한 경우 조회허용수가 얼마 안되는 구글신에 문의
+            if len(result) < 1:
+                query(q, 'google', result)
+
+        else: # source가 지정된 경우
+            query(q, source, result)
+
+        # 좌표계 지정된 경우 처리 필요
+        prj = Proj(init=crs)
+
+        ### RETURN ###
+        # 하나도 응답이 없는 경우 실패로 리턴
+        if len(result) <= 0:
+            # 실패시 로그로 남기자
+            # http://gyus.me/?p=418
+            logger.info("ALL fail | {}".format(q))
+
+            return make_response({"EPSG_4326_X": None, "EPSG_4326_Y": None, "JUSO": None})
+
+        ### RETURN ###
+        # 입력 주소값과 완전 동일한 주소를 반환하면 틀림 없는 것으로 판정
+        for res in result:
+            address = res["address"]
+            if get_sim_ratio(q, address) == 1.0:
+                if crs == "epsg:4326":
+                    x, y = res["x"], res["y"]
+                else:
+                    x, y = prj(res["x"], res["y"])
+
+                address = res["address"]
+                geojson = make_geojson(x, y, res["address"], res["service"], 0)
+                return make_response(
+                    {
+                        "EPSG_4326_X": x, "EPSG_4326_Y": y, "JUSO": address
+                    }
+                )
+
+        ### RETURN ###
+        # 결과가 한 개인 경우
+        if len(result) == 1:
+            res = result[0]
+            if crs == "epsg:4326":
+                x, y = res["x"], res["y"]
+            else:
+                x, y = prj(res["x"], res["y"])
+
+            address = res["address"]
+            sim_ratio = get_sim_ratio(q, address)
+            geojson = make_geojson(x, y, res["address"], res["service"], 0)
+            return make_response(
+                {
+                    "EPSG_4326_X": x, "EPSG_4326_Y": y, "JUSO": address
+                }
+            )
+
+        # 오차범위로 줄어들거나 2개만 남을 때까지 반복해 실행
+        while True:
+            # Naver 좌표계로 변환하여 거리측정 준비
+            points = list()
+            min_x = min_y = max_x = max_y = None
+            sum_x = sum_y = 0
+            for res in result:
+                lng, lat = res['x'], res['y']
+                x, y = gProj5179(lng, lat)
+                points.append([x, y])
+                min_x = min_x if min(min_x, x) else x  # 삼항연산자: http://gentooboy.tistory.com/102
+                min_y = min_y if min(min_y, y) else y
+                max_x = max_x if max(max_x, x) else x
+                max_y = max_y if max(max_y, y) else y
+                sum_x += x
+                sum_y += y
+            avg_x = sum_x / len(points)
+            avg_y = sum_y / len(points)
+
+            # 공간거리 편차 계산
+            sum_dev_sq = 0
+            for pnt in points:
+                sum_dev_sq += (avg_x-pnt[0])**2 + (avg_y-pnt[1])**2
+            sd = sqrt(sum_dev_sq / len(points))
+
+            ### RETURN ###
+            # 표준편차가 50을 넘지 않거나 결과가 2개 뿐이 없는 경우
+            if sd <= 50 or len(result) <= 2:
+                service = None
+                address = None
+                base_data = list()
+                sum_x = sum_y = 0
+
+                max_sim_ratio = 0
+                res_x, res_y = None, None
+                res_lng, res_lat = None, None
+                res_dev = None
+
+                for i in range(len(result)):
+                    res = result[i]
+                    if not service:
+                        service = unicode(res["service"])
+                    else:
+                        service = "{}|{}".format(service, res["service"])
+
+                    # 결과의 유사도 판단
+                    if not address:
+                        address = unicode(res["address"])
+
+                    if crs == "epsg:4326":
+                        x, y = res["x"], res["y"]
+                    else:
+                        x, y = prj(res["x"], res["y"])
+                    sum_x += x
+                    sum_y += y
+
+                    deviation = sqrt((avg_x-points[i][0])**2 + (avg_y-points[i][1])**2)
+
+                    sim_ratio = get_sim_ratio(q, address)
+                    if sim_ratio >= max_sim_ratio:
+                        address = unicode(res["address"])
+                        max_sim_ratio = sim_ratio
+                        res_lng, res_lat = res["x"], res["y"]
+                        res_x, res_y = x, y
+                        res_dev = deviation
+
+                    geojson = make_geojson(x, y, res["address"], res["service"], int(deviation))
+                    base_data.append(geojson)
+
+                return make_response(
+                    {
+                        "EPSG_4326_X": res_x, "EPSG_4326_Y": res_y, "JUSO": address
+                    }
+                )
+
+            # 통계적으로 튀는 값을 판별하는 방식이 있음
+            # http://egloos.zum.com/bioscience/v/5716716
+            # 하지만 그냥 편차가 가장 큰 놈을 제거하고 반복
+            max_dev = None
+            max_dev_index = None
+            for i in range(len(result)):
+                deviation = sqrt((avg_x-points[i][0])**2 + (avg_y-points[i][1])**2)
+                if not max_dev or deviation > max_dev:
+                    max_dev_index = i
+                    max_dev = deviation
+
+            result.remove(result[max_dev_index])
+
+        ## END WHILE
+
+        # {"EPSG_4326_X" : "127.073483664621", "EPSG_4326_Y" : "37.5773822182119", "JUSO" : "서울특별시 동대문구 장안동 320-10"}
+        for res in result:
+            res_string = '{"EPSG_4326_X" : "{}", "EPSG_4326_Y" : "{}", "JUSO" : "{}"}'.format(
+                res["x"], res["y"], res["address"]
+            )
+
+        return res_string
+
+    except Exception as err:
+        logger.error(err)
+        return "[ERROR] {}".format(err)
+
+
 # 주소 유사도 판단
 def get_sim_ratio(org_addr, out_addr, elseif=None):
     # 결과의 유사도 판단
@@ -421,7 +644,10 @@ def get_sim_ratio(org_addr, out_addr, elseif=None):
         if org_word_list[i] == "" or out_word_list[i] == "":
             pass
         else:
-            total_sim_ratio += SequenceMatcher(None, org_word_list[i], out_word_list[i]).ratio() * 0.25
+            part_sim_ratio = SequenceMatcher(None, org_word_list[i], out_word_list[i]).ratio()
+            if part_sim_ratio > 1.0:
+                part_sim_ratio = 2 - part_sim_ratio
+            total_sim_ratio += part_sim_ratio * 0.25
 
     # 주소 형식이 완전히 이상한 경우 전체로 테스트
     if total_sim_ratio == 0:
@@ -434,7 +660,7 @@ def get_sim_ratio(org_addr, out_addr, elseif=None):
 def make_response(dictionary, id=None):
     if id:
         dictionary["id"] = id
-    ret = Response(json.dumps(dictionary, ensure_ascii=False), mimetype='application/json')
+    ret = Response(json.dumps(dictionary, ensure_ascii=False), mimetype='text/json')
     ret.content_encoding = 'utf-8'
     return ret
 
